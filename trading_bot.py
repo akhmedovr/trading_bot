@@ -22,7 +22,7 @@ CONFIG = {
     "use_funding": True,
     "leverage": 3,
     "fee": 0.0005,
-    "paper_balance": 10000.0,
+    "paper_balance": 200.0,
     "loop_seconds": 30,
 }
 
