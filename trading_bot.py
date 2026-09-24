@@ -3,6 +3,7 @@ import time
 import ccxt
 import numpy as np
 import pandas as pd
+from notify import notify
 
 # ------------------------- НАСТРОЙКИ -------------------------
 CONFIG = {
@@ -115,7 +116,7 @@ def build_trade(side: str, price: float, atr: float, balance: float) -> dict:
         sl, tp = price - stop_dist, price + stop_dist * CONFIG["rr"]
     else:
         sl, tp = price + stop_dist, price - stop_dist * CONFIG["rr"]
-    return {"side": side, "entry": price, "sl": sl, "tp": tp, "size": size}
+    return {"side": side, "entry": price, "sl": sl, "tp": tp, "size": size, "risk": risk_amount}
 
 # ------------------------- БИРЖА -------------------------
 def make_exchange():
@@ -133,24 +134,6 @@ def fetch_df(ex, limit=500) -> pd.DataFrame:
     raw = ex.fetch_ohlcv(CONFIG["symbol"], CONFIG["timeframe"], limit=limit)
     df = pd.DataFrame(raw, columns=["ts", "open", "high", "low", "close", "volume"])
     return add_indicators(df)
-
-def place_live_order(ex, t: dict):
-    sym, side = CONFIG["symbol"], ("buy" if t["side"] == "long" else "sell")
-    for fn, args in ((ex.set_margin_mode, ("isolated", sym)), (ex.set_leverage, (CONFIG["leverage"], sym))):
-        try:
-            fn(*args)
-        except Exception as e:
-            print("Плечо/маржа:", e)
-    amount = float(ex.amount_to_precision(sym, t["size"]))
-    min_amt = ex.market(sym)["limits"]["amount"]["min"]
-    if min_amt and amount < min_amt:
-        print(f"Размер {amount} меньше минимума {min_amt}, ордер пропущен")
-        return
-    order = ex.create_order(sym, "market", side, amount, None, {
-        "stopLoss": {"triggerPrice": float(ex.price_to_precision(sym, t["sl"]))},
-        "takeProfit": {"triggerPrice": float(ex.price_to_precision(sym, t["tp"]))},
-    })
-    print("Ордер отправлен:", order.get("id"))
 
 # ------------------------- БУМАЖНАЯ ТОРГОВЛЯ -------------------------
 def check_exit(pos: dict, high: float, low: float):
@@ -172,17 +155,43 @@ def pnl(pos: dict, exit_price: float) -> float:
     fees = CONFIG["fee"] * (pos["entry"] + exit_price) * pos["size"]
     return gross - fees
 
-def live_position_open(ex) -> bool:
-    for p in ex.fetch_positions([CONFIG["symbol"]]):
-        if abs(float(p.get("contracts") or 0)) > 0:
-            return True
-    return False
+# ------------------------- УВЕДОМЛЕНИЯ -------------------------
+def notify_open(trade: dict, score: int):
+    side_emoji = "🟢" if trade["side"] == "long" else "🔴"
+    side_text = trade["side"].upper()
+    msg = (
+        f"{side_emoji} <b>СИГНАЛ {side_text} BTC/USDT</b>\n\n"
+        f"📊 Вход: ${trade['entry']:.2f}\n"
+        f"🛑 Стоп: ${trade['sl']:.2f}\n"
+        f"🎯 Тейк: ${trade['tp']:.2f}\n\n"
+        f"⚖️ Размер: {trade['size']:.4f} BTC\n"
+        f"💵 Сумма: ${trade['size'] * trade['entry']:.2f}\n"
+        f"📈 Плечо: {CONFIG['leverage']}x\n"
+        f"⚠️ Риск: ${trade['risk']:.2f}\n"
+        f"🎯 Score: {score}"
+    )
+    notify(msg)
 
+def notify_close(pos: dict, exit_price: float, p: float, balance: float):
+    emoji = "✅" if p >= 0 else "❌"
+    msg = (
+        f"{emoji} <b>СДЕЛКА ЗАКРЫТА</b>\n\n"
+        f"📊 BTC/USDT ({pos['side'].upper()})\n"
+        f"💰 Вход: ${pos['entry']:.2f}\n"
+        f"🎯 Выход: ${exit_price:.2f}\n"
+        f"📈 PnL: <b>${p:+.2f}</b>\n"
+        f"💼 Баланс: ${balance:.2f}"
+    )
+    notify(msg)
+
+# ------------------------- ГЛАВНЫЙ ЦИКЛ -------------------------
 def run_bot():
     ex = make_exchange()
     balance, pos = CONFIG["paper_balance"], None
     last_signal_ts = None
-    print(f"Старт. Режим: {'LIVE' if CONFIG['live'] else 'PAPER'}")
+    mode = 'LIVE' if CONFIG['live'] else 'PAPER'
+    print(f"Старт. Режим: {mode}")
+    notify(f"🚀 <b>Торговый бот запущен</b>\nРежим: {mode}\nБаланс: ${balance:.2f}")
     while True:
         try:
             df = fetch_df(ex)
@@ -205,13 +214,13 @@ def run_bot():
                     p = pnl(pos, exit_price)
                     balance += p
                     print(f"Закрыта {pos['side']} по {exit_price:.2f}, PnL={p:.2f}, Баланс={balance:.2f}")
+                    notify_close(pos, exit_price, p, balance)
                     pos = None
             elif signal != "none":
                 trade = build_trade(signal, price, atr, balance)
                 pos = trade
-                print(f"Сигнал {signal.upper()} (score={score}), вход={price:.2f}, SL={trade['sl']:.2f}, TP={trade['tp']:.2f}")
-                if CONFIG["live"]:
-                    place_live_order(ex, trade)
+                print(f"Сигнал {signal.upper()} (score={score}), вход={price:.2f}")
+                notify_open(trade, score)
             else:
                 print(f"Сигнал: none (score={score}), цена={price:.2f}, баланс={balance:.2f}")
         except Exception as e:
