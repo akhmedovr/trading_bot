@@ -9,7 +9,7 @@ from notify import notify
 CONFIG = {
     "exchange": "bybit",
     "symbol": "BTC/USDT:USDT",
-    "timeframe": "1h",
+    "timeframe": "15m",
     "live": False,
     "testnet": True,
     "api_key": "",
@@ -17,7 +17,7 @@ CONFIG = {
     "risk_per_trade": 0.01,
     "atr_stop_mult": 2.0,
     "rr": 2.0,
-    "open_threshold": 3,
+    "open_threshold": 2,
     "use_macro": False,
     "use_funding": True,
     "leverage": 3,
@@ -159,27 +159,42 @@ def pnl(pos: dict, exit_price: float) -> float:
 def notify_open(trade: dict, score: int):
     side_emoji = "🟢" if trade["side"] == "long" else "🔴"
     side_text = trade["side"].upper()
+    entry = trade["entry"]
+    sl = trade["sl"]
+    tp = trade["tp"]
+    size = trade["size"]
+    risk = trade["risk"]
+    potential = abs(tp - entry) * size
+    sl_pct = abs(sl - entry) / entry * 100
+    tp_pct = abs(tp - entry) / entry * 100
+    rr = potential / risk if risk > 0 else 0
     msg = (
         f"{side_emoji} <b>СИГНАЛ {side_text} BTC/USDT</b>\n\n"
-        f"📊 Вход: ${trade['entry']:.2f}\n"
-        f"🛑 Стоп: ${trade['sl']:.2f}\n"
-        f"🎯 Тейк: ${trade['tp']:.2f}\n\n"
-        f"⚖️ Размер: {trade['size']:.4f} BTC\n"
-        f"💵 Сумма: ${trade['size'] * trade['entry']:.2f}\n"
-        f"📈 Плечо: {CONFIG['leverage']}x\n"
-        f"⚠️ Риск: ${trade['risk']:.2f}\n"
+        f"📊 Вход: ${entry:.2f}\n"
+        f"🛑 Стоп: ${sl:.2f}  (-{sl_pct:.2f}%)\n"
+        f"🎯 Тейк: ${tp:.2f}  (+{tp_pct:.2f}%)\n\n"
+        f"⚖️ Размер: {size:.4f} BTC\n"
+        f"💵 Сумма: ${size * entry:.2f}\n"
+        f"📈 Плечо: {CONFIG['leverage']}x\n\n"
+        f"⚠️ Риск: <b>${risk:.2f}</b>\n"
+        f"💰 Потенциал: <b>${potential:.2f}</b>\n"
+        f"📊 R:R = 1:{rr:.2f}\n\n"
         f"🎯 Score: {score}"
     )
     notify(msg)
 
 def notify_close(pos: dict, exit_price: float, p: float, balance: float):
     emoji = "✅" if p >= 0 else "❌"
+    pct = (exit_price - pos["entry"]) / pos["entry"] * 100
+    if pos["side"] == "short":
+        pct = -pct
     msg = (
         f"{emoji} <b>СДЕЛКА ЗАКРЫТА</b>\n\n"
         f"📊 BTC/USDT ({pos['side'].upper()})\n"
         f"💰 Вход: ${pos['entry']:.2f}\n"
-        f"🎯 Выход: ${exit_price:.2f}\n"
+        f"🎯 Выход: ${exit_price:.2f}\n\n"
         f"📈 PnL: <b>${p:+.2f}</b>\n"
+        f"📊 Процент: <b>{pct:+.2f}%</b>\n"
         f"💼 Баланс: ${balance:.2f}"
     )
     notify(msg)
