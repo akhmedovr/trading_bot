@@ -111,7 +111,9 @@ def build_trade(side: str, price: float, atr: float, balance: float) -> dict:
     stop_dist = atr * CONFIG["atr_stop_mult"]
     risk_amount = balance * CONFIG["risk_per_trade"]
     size = risk_amount / stop_dist
-    size = min(size, balance * CONFIG["leverage"] / price)
+    max_by_leverage = balance * CONFIG["leverage"] / price
+    max_position = balance * 0.5 / price
+    size = min(size, max_by_leverage, max_position)
     if side == "long":
         sl, tp = price - stop_dist, price + stop_dist * CONFIG["rr"]
     else:
