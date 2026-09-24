@@ -18,7 +18,7 @@ CONFIG = {
     "atr_stop_mult": 2.0,
     "rr": 2.0,
     "open_threshold": 3,
-    "use_macro": True,
+    "use_macro": False,
     "use_funding": True,
     "leverage": 3,
     "fee": 0.0005,
