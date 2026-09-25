@@ -26,6 +26,9 @@ CONFIG = {
     "MARKET_TYPE": "swap",
     "TIMEFRAME": "1h",
     "SYMBOLS": [
+        "BTC/USDT:USDT",
+        "ETH/USDT:USDT",
+        "SOL/USDT:USDT",
         "DOGE/USDT:USDT",
         "XRP/USDT:USDT",
         "1000PEPE/USDT:USDT",
