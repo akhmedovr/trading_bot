@@ -225,7 +225,7 @@ def build_trade(side, price, atr, balance):
 # =========================================================================
 # УВЕДОМЛЕНИЯ В TELEGRAM
 # =========================================================================
-def notify_open(trade, score):
+def notify_open(symbol, trade, score):
     """Красиво форматирует открытие сделки и отправляет в Telegram."""
     side_emoji = "🟢" if trade["side"] == "long" else "🔴"
     side_text = trade["side"].upper()
@@ -240,7 +240,7 @@ def notify_open(trade, score):
     rr = potential / risk if risk > 0 else 0
 
     msg = (
-        f"{side_emoji} <b>СИГНАЛ {side_text}</b>\n\n"
+        f"{side_emoji} <b>СИГНАЛ {side_text} {symbol}</b>\n\n"
         f"📊 Вход: ${entry:.6f}\n"
         f"🛑 Стоп: ${sl:.6f}  (-{sl_pct:.2f}%)\n"
         f"🎯 Тейк: ${tp:.6f}  (+{tp_pct:.2f}%)\n\n"
@@ -352,7 +352,7 @@ def run_bot():
                     trade = build_trade(signal["side"], signal["price"], signal["atr"], balance)
                     positions[symbol] = trade
                     log(f"[{symbol}] Сигнал {signal['side'].upper()} score={signal['score']}, вход={signal['price']:.6f}")
-                    notify_open(trade, signal["score"])
+                    notify_open(symbol, trade, signal["score"])
 
                 except Exception as e:
                     log(f"[{symbol}] Ошибка: {e}")
