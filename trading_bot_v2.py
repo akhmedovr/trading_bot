@@ -183,4 +183,37 @@ def get_signal(df: pd.DataFrame):
         "price": float(row["close"]),
         "atr": float(row["atr"]),
     }
-    github.com/akhmedovr/trading_bot/edit/main/trading_bot_v2.py
+    # =========================================================================
+# РИСК-МЕНЕДЖМЕНТ: построение сделки
+# =========================================================================
+def build_trade(side, price, atr, balance):
+    """
+    Строит сделку на основе стороны, цены, ATR и баланса.
+    Возвращает dict с параметрами ордера и риск-менеджментом.
+    """
+    risk_amount = balance * CONFIG["RISK_PER_TRADE_PCT"]
+    stop_dist = atr * CONFIG["ATR_SL_MULT"]
+    size = risk_amount / stop_dist
+
+    max_size = balance * CONFIG["MAX_POSITION_PCT"] / price
+    if size > max_size:
+        size = max_size
+
+    if side == "long":
+        sl = price - stop_dist
+        tp = price + stop_dist * CONFIG["RR_RATIO"]
+    else:
+        sl = price + stop_dist
+        tp = price - stop_dist * CONFIG["RR_RATIO"]
+
+    potential = abs(tp - price) * size
+
+    return {
+        "side": side,
+        "entry": price,
+        "sl": sl,
+        "tp": tp,
+        "size": size,
+        "risk_usd": risk_amount,
+        "potential_usd": potential,
+    }
