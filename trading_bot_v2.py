@@ -217,3 +217,54 @@ def build_trade(side, price, atr, balance):
         "risk_usd": risk_amount,
         "potential_usd": potential,
     }
+
+
+# =========================================================================
+# УВЕДОМЛЕНИЯ В TELEGRAM
+# =========================================================================
+def notify_open(trade, score):
+    """Красиво форматирует открытие сделки и отправляет в Telegram."""
+    side_emoji = "🟢" if trade["side"] == "long" else "🔴"
+    side_text = trade["side"].upper()
+    entry = trade["entry"]
+    sl = trade["sl"]
+    tp = trade["tp"]
+    size = trade["size"]
+    risk = trade["risk_usd"]
+    potential = trade["potential_usd"]
+    sl_pct = abs(sl - entry) / entry * 100
+    tp_pct = abs(tp - entry) / entry * 100
+    rr = potential / risk if risk > 0 else 0
+
+    msg = (
+        f"{side_emoji} <b>СИГНАЛ {side_text}</b>\n\n"
+        f"📊 Вход: ${entry:.6f}\n"
+        f"🛑 Стоп: ${sl:.6f}  (-{sl_pct:.2f}%)\n"
+        f"🎯 Тейк: ${tp:.6f}  (+{tp_pct:.2f}%)\n\n"
+        f"⚖️ Размер: {size:.6f}\n"
+        f"💵 Сумма: ${size * entry:.2f}\n\n"
+        f"⚠️ Риск: <b>${risk:.2f}</b>\n"
+        f"💰 Потенциал: <b>${potential:.2f}</b>\n"
+        f"📊 R:R = 1:{rr:.2f}\n\n"
+        f"🎯 Score: {score}"
+    )
+    send_telegram_message(msg)
+
+
+def notify_close(symbol, pos, exit_price, p, balance):
+    """Красиво форматирует закрытие сделки и отправляет в Telegram."""
+    emoji = "✅" if p >= 0 else "❌"
+    pct = (exit_price - pos["entry"]) / pos["entry"] * 100
+    if pos["side"] == "short":
+        pct = -pct
+
+    msg = (
+        f"{emoji} <b>СДЕЛКА ЗАКРЫТА</b>\n\n"
+        f"📊 {symbol} ({pos['side'].upper()})\n"
+        f"💰 Вход: ${pos['entry']:.6f}\n"
+        f"🎯 Выход: ${exit_price:.6f}\n\n"
+        f"📈 PnL: <b>${p:+.2f}</b>\n"
+        f"📊 Процент: <b>{pct:+.2f}%</b>\n"
+        f"💼 Баланс: ${balance:.2f}"
+    )
+    send_telegram_message(msg)
