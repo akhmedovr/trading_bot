@@ -183,3 +183,4 @@ def get_signal(df: pd.DataFrame):
         "price": float(row["close"]),
         "atr": float(row["atr"]),
     }
+    github.com/akhmedovr/trading_bot/edit/main/trading_bot_v2.py
