@@ -268,3 +268,173 @@ def notify_close(symbol, pos, exit_price, p, balance):
         f"💼 Баланс: ${balance:.2f}"
     )
     send_telegram_message(msg)
+
+
+# =========================================================================
+# ПОЛУЧЕНИЕ ДАННЫХ С БИРЖИ
+# =========================================================================
+def fetch_ohlcv(exchange, symbol, timeframe, limit=300):
+    """Загружает свечи и добавляет индикаторы."""
+    raw = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
+    df = pd.DataFrame(raw, columns=["ts", "open", "high", "low", "close", "volume"])
+    df["ts"] = pd.to_datetime(df["ts"], unit="ms", utc=True)
+    df = df.set_index("ts")
+    return add_indicators(df)
+
+
+def make_exchange():
+    """Создаёт объект биржи ccxt (публичный, без ключей)."""
+    exchange_class = getattr(ccxt, CONFIG["EXCHANGE_ID"])
+    ex = exchange_class({
+        "enableRateLimit": True,
+        "options": {"defaultType": CONFIG["MARKET_TYPE"]},
+    })
+    return ex
+
+
+# =========================================================================
+# ГЛАВНЫЙ ЦИКЛ PAPER-ТОРГОВЛИ
+# =========================================================================
+def run_bot():
+    """Живой paper-трейдинг: опрос рынка, сигналы, виртуальные сделки."""
+    log("Запуск бота в PAPER режиме")
+    log(f"Монеты: {', '.join(CONFIG['SYMBOLS'])}")
+    log(f"Стартовый баланс: ${CONFIG['VIRTUAL_BALANCE_START']:.2f}")
+    log(f"Плечо: {CONFIG['LEVERAGE']}x")
+
+    send_telegram_message(
+        f"🚀 <b>Бот запущен (PAPER)</b>\n"
+        f"Монет: {len(CONFIG['SYMBOLS'])}\n"
+        f"Баланс: ${CONFIG['VIRTUAL_BALANCE_START']:.2f}"
+    )
+
+    ex = make_exchange()
+    balance = CONFIG["VIRTUAL_BALANCE_START"]
+    positions = {}  # {symbol: pos_dict}
+    last_candle_ts = {}
+
+    while True:
+        try:
+            for symbol in CONFIG["SYMBOLS"]:
+                try:
+                    df = fetch_ohlcv(ex, symbol, CONFIG["TIMEFRAME"], CONFIG["OHLCV_LIMIT"])
+                    if len(df) < 50:
+                        continue
+
+                    current_ts = df.index[-1]
+
+                    # Если уже есть открытая позиция — проверяем выход
+                    if symbol in positions:
+                        pos = positions[symbol]
+                        last_closed = df.iloc[-2]
+                        exit_price = check_exit(pos, last_closed["high"], last_closed["low"])
+
+                        if exit_price is not None:
+                            p = pnl(pos, exit_price)
+                            balance += p
+                            log(f"[{symbol}] Закрыта {pos['side']} по {exit_price:.6f}, PnL=${p:+.2f}, Баланс=${balance:.2f}")
+                            notify_close(symbol, pos, exit_price, p, balance)
+                            del positions[symbol]
+                        continue
+
+                    # Нет позиции — ищем сигнал
+                    if last_candle_ts.get(symbol) == current_ts:
+                        continue
+                    last_candle_ts[symbol] = current_ts
+
+                    signal = get_signal(df)
+                    if signal is None:
+                        continue
+
+                    trade = build_trade(signal["side"], signal["price"], signal["atr"], balance)
+                    positions[symbol] = trade
+                    log(f"[{symbol}] Сигнал {signal['side'].upper()} score={signal['score']}, вход={signal['price']:.6f}")
+                    notify_open(trade, signal["score"])
+
+                except Exception as e:
+                    log(f"[{symbol}] Ошибка: {e}")
+
+            time.sleep(CONFIG["POLL_INTERVAL_SEC"])
+
+        except KeyboardInterrupt:
+            log("Остановка бота (Ctrl+C)")
+            break
+        except Exception as e:
+            log(f"Общая ошибка: {e}")
+            log(traceback.format_exc())
+            time.sleep(30)
+
+
+# =========================================================================
+# БЭКТЕСТ
+# =========================================================================
+def run_backtest():
+    """Простой бэктест на исторических данных по каждой монете."""
+    log("Запуск бэктеста")
+    ex = make_exchange()
+
+    for symbol in CONFIG["SYMBOLS"]:
+        try:
+            log(f"\n=== {symbol} ===")
+            df = fetch_ohlcv(ex, symbol, CONFIG["TIMEFRAME"], CONFIG["BACKTEST_LIMIT"])
+
+            if len(df) < 250:
+                log(f"Недостаточно данных ({len(df)} свечей)")
+                continue
+
+            balance = CONFIG["VIRTUAL_BALANCE_START"]
+            pos = None
+            trades = 0
+            wins = 0
+            losses = 0
+
+            for i in range(250, len(df)):
+                window = df.iloc[:i+1]
+                if len(window) < 250:
+                    continue
+
+                row = window.iloc[-1]
+
+                if pos is not None:
+                    exit_price = check_exit(pos, row["high"], row["low"])
+                    if exit_price is not None:
+                        p = pnl(pos, exit_price)
+                        balance += p
+                        trades += 1
+                        if p > 0:
+                            wins += 1
+                        else:
+                            losses += 1
+                        pos = None
+                    continue
+
+                signal = get_signal(window)
+                if signal is not None:
+                    pos = build_trade(signal["side"], signal["price"], signal["atr"], balance)
+
+            log(f"Сделок: {trades} | Прибыльных: {wins} | Убыточных: {losses}")
+            log(f"Финальный баланс: ${balance:.2f} (стартовый: ${CONFIG['VIRTUAL_BALANCE_START']:.2f})")
+            pnl_pct = (balance - CONFIG["VIRTUAL_BALANCE_START"]) / CONFIG["VIRTUAL_BALANCE_START"] * 100
+            log(f"P&L: {pnl_pct:+.2f}%")
+
+        except Exception as e:
+            log(f"Ошибка бэктеста для {symbol}: {e}")
+
+
+# =========================================================================
+# ТОЧКА ВХОДА
+# =========================================================================
+def main():
+    parser = argparse.ArgumentParser(description="Трендовый бот для Bybit (paper)")
+    parser.add_argument("--backtest", action="store_true", help="Запустить бэктест")
+    args = parser.parse_args()
+
+    if args.backtest:
+        CONFIG["MODE"] = "backtest"
+        run_backtest()
+    else:
+        run_bot()
+
+
+if __name__ == "__main__":
+    main()
