@@ -1,6 +1,7 @@
 """
 notify.py
-Telegram-модуль: отправка сообщений, кнопки, polling, редактирование.
+Telegram-модуль: отправка сообщений, кнопки, polling.
+Поддерживает отправку нескольким пользователям (chat_id передаётся явно).
 """
 
 import json
@@ -15,7 +16,10 @@ import requests
 # НАСТРОЙКИ
 # =========================================================================
 TELEGRAM_TOKEN = "8800264793:AAE3GRVALr1I3XmQAkaqsladdRqtxlDDAZQ"
-TELEGRAM_CHAT_ID = "2144158162"
+
+# Твой chat_id по умолчанию (для уведомлений от торгового бота)
+DEFAULT_CHAT_ID = "2144158162"
+
 API_URL = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 
 
@@ -29,11 +33,13 @@ def _log(msg: str):
 # =========================================================================
 def send_telegram_message(
     text: str,
+    chat_id: Optional[str] = None,
     parse_mode: str = "HTML",
     buttons: Optional[list] = None,
 ) -> Optional[dict]:
     """
     Отправляет сообщение в Telegram.
+    chat_id — если None, используется DEFAULT_CHAT_ID.
     buttons — список рядов кнопок:
         [
             [{"text": "BTC", "callback_data": "analyze:BTC/USDT:USDT"}],
@@ -41,13 +47,15 @@ def send_telegram_message(
         ]
     Возвращает result-объект (содержит message_id).
     """
-    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-        _log("Токен/чат не заданы, вывод в консоль:")
+    if not TELEGRAM_TOKEN:
+        _log("Токен не задан, вывод в консоль:")
         print(text)
         return None
 
+    target_chat_id = chat_id or DEFAULT_CHAT_ID
+
     payload = {
-        "chat_id": TELEGRAM_CHAT_ID,
+        "chat_id": target_chat_id,
         "text": text,
         "parse_mode": parse_mode,
         "disable_web_page_preview": True,
@@ -68,7 +76,7 @@ def send_telegram_message(
 
 
 def edit_message_text(
-    chat_id: int,
+    chat_id: str,
     message_id: int,
     text: str,
     parse_mode: str = "HTML",
@@ -100,7 +108,7 @@ def edit_message_text(
 
 
 def answer_callback_query(callback_id: str, text: Optional[str] = None) -> bool:
-    """Убирает 'часики' с кнопки, опционально показывает текст."""
+    """Убирает 'часики' с кнопки, опционально показывает всплывающий текст."""
     payload = {"callback_query_id": callback_id}
     if text:
         payload["text"] = text
@@ -127,7 +135,11 @@ def get_updates(offset: int = 0, timeout: int = 25) -> list:
         "allowed_updates": json.dumps(["message", "callback_query"]),
     }
     try:
-        resp = requests.get(f"{API_URL}/getUpdates", params=params, timeout=timeout + 10)
+        resp = requests.get(
+            f"{API_URL}/getUpdates",
+            params=params,
+            timeout=timeout + 10,
+        )
         if resp.status_code == 200:
             return resp.json().get("result", [])
         _log(f"getUpdates: HTTP {resp.status_code} | {resp.text}")
@@ -158,5 +170,5 @@ __all__ = [
     "get_updates",
     "get_me",
     "TELEGRAM_TOKEN",
-    "TELEGRAM_CHAT_ID",
+    "DEFAULT_CHAT_ID",
 ]
